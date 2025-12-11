@@ -28,7 +28,7 @@ tumor_sizes = []
 # Generate data for each patient
 for i in range(num_patients):
     # Patient_ID: Unique identifier
-    patient_ids.append(f"P{i+1:04d}")
+    patient_ids.append(f"PID{i+1:04d}")
     
     # Full_Name: Generated using Faker
     full_names.append(faker.name())
@@ -93,5 +93,4 @@ df = pd.DataFrame(data)
 # Export the DataFrame to an Excel file
 excel_file_path = "AI_PES - Inferno (PES-AIML-15)_RawDataset.xlsx"
 df.to_excel(excel_file_path, index=False)
-
 print(f"Raw dataset generated and saved to {excel_file_path}")
