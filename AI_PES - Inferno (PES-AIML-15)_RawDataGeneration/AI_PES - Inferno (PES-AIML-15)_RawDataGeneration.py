@@ -26,7 +26,7 @@ blood_pressures = []
 heart_rates = []
 stages = []
 tumor_sizes = []
-
+cancer_types = []
 
 # Generate data for each patient
 for i in range(num_patients):
@@ -76,6 +76,9 @@ for i in range(num_patients):
     # Heart_Rate: Random integer within a realistic range
     heart_rates.append(np.random.randint(60, 101))
     
+    #Cancer_Type: Randomly selected cancer type
+    cancer_types.append(np.random.choice(["Benign", "Malignant"]))
+
     # Stages: Randomly selected cancer stage
     stages.append(np.random.choice(["I", "II", "III", "IV"]))
     
@@ -98,6 +101,7 @@ data = {
     "Hemoglobin_Level": hemoglobin_levels,
     "Blood_Pressure": blood_pressures,
     "Heart_Rate": heart_rates,
+    "Cancer_Type": cancer_types,
     "Stages": stages,
     "Tumor Size": tumor_sizes
 }
