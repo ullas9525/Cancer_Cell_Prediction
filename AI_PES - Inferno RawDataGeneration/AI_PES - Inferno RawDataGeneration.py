@@ -110,6 +110,6 @@ data = {
 df = pd.DataFrame(data)
 
 # Export the DataFrame to an Excel file
-excel_file_path = "AI_PES - Inferno (PES-AIML-15)_RawDataGeneration/AI_PES - Inferno (PES-AIML-15)_RawDataset.xlsx"
+excel_file_path = "AI_PES - Inferno RawDataGeneration/AI_PES - Inferno RawDataset.xlsx"
 df.to_excel(excel_file_path, index=False)
 print(f"Raw dataset generated and saved to {excel_file_path}")
