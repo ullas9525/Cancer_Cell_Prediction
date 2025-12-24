@@ -6,7 +6,7 @@ RANDOM_SEED = 42                        # set random seed
 random.seed(RANDOM_SEED)                # apply seed to random
 np.random.seed(RANDOM_SEED)             # apply seed to numpy
 
-url = "AI_PES - Inferno RawDataGeneration/AI_PES - Inferno RawDataset.xlsx"  # dataset path
+url = "https://raw.githubusercontent.com/ullas9525/Cancer_Cell_Prediction/main/AI_PES%20-%20Inferno%20RawDataGeneration/AI_PES%20-%20Inferno%20RawDataset.xlsx"  # dataset path
 
 try:                                    # try loading file
     df = pd.read_excel(url)             # read excel
