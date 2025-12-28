@@ -1,130 +1,124 @@
 import pandas as pd
 import numpy as np
+import os
+import re
 
-# -------------------------------------------------
-# 1. Load Dataset
-# -------------------------------------------------
-DATA_URL = ("https://raw.githubusercontent.com/ullas9525/Cancer_Cell_Prediction/main/AI_PES%20-%20Inferno%20AnomalyInjection/AI_PES%20-%20Inferno%20AnomalousDataset.xlsx"
-)
+# Define the input URL and output path
+input_url = "https://raw.githubusercontent.com/ullas9525/Cancer_Cell_Prediction/main/AI_PES%20-%20Inferno%20AnomalyInjection/AI_PES%20-%20Inferno%20AnomalousDataset.xlsx"
+output_folder = "AI_PES - Inferno DataCleaning"
+output_file = f"{output_folder}/AI_PES - Inferno CleanedDataset.xlsx"
 
-df = pd.read_excel(DATA_URL)
-print("Original shape:", df.shape)
+print(f"Loading anomalous dataset from: {input_url}...")
 
-# -------------------------------------------------
-# 2. Strip column name spaces (DO NOT rename)
-# -------------------------------------------------
-df.columns = df.columns.str.strip()
+# Load the dataset
+try:
+    df = pd.read_excel(input_url)
+    print("Dataset loaded successfully.")
+except Exception as e:
+    print(f"Error loading dataset: {e}")
+    exit()
 
-# -------------------------------------------------
-# 3. Safe column finder (NO IndexError possible)
-# -------------------------------------------------
-def find_col(contains_any):
-    for col in df.columns:
-        name = col.lower()
-        if any(key in name for key in contains_any):
-            return col
-    return None
+# Remove duplicate Patient_IDs (keep first occurrence)
+df.drop_duplicates(subset='Patient_ID', keep='first', inplace=True)
 
-age_col        = find_col(["age"])
-gender_col     = find_col(["gender"])
-blood_group_col= find_col(["blood group", "bloodgroup"])
-wbc_col        = find_col(["wbc"])
-rbc_col        = find_col(["rbc"])
-platelet_col   = find_col(["platelet"])
-hb_col         = find_col(["hemoglobin", "hb"])
-bp_col         = find_col(["blood pressure", "bp"])
+# SAFE STRIPPING: Only apply strip to actual string values column by column
+# This prevents deleting numbers in mixed-type columns
+for col in df.select_dtypes(include=['object']).columns:
+    df[col] = df[col].apply(lambda x: x.strip() if isinstance(x, str) else x)
 
-# -------------------------------------------------
-# 4. Remove duplicates
-# -------------------------------------------------
-df = df.drop_duplicates()
+# 1. Fix Gender values
+# Map various inputs to standard categories
+gender_map = {'male': 'Male', 'FEMALE': 'Female', 'm': 'Male', 'f': 'Female', 'Unknown': 'Unknown'}
+df['Gender'] = df['Gender'].map(gender_map).fillna('Unknown')
 
-# -------------------------------------------------
-# 5. Clean AGE (numbers only)
-# -------------------------------------------------
-def clean_age(val):
-    if isinstance(val, str):
-        v = val.strip().lower()
-        if v == "old":
-            return np.nan
-        if v == "forty":
-            return 40
-    try:
-        return int(val)
-    except:
-        return np.nan
+# 2. Fix Numeric Columns & Wrong Data Types
+# PROBLEM SOLVER: This function removes text (like 'yrs', 'bpm', ',') before converting
+def clean_numeric_noise(val):
+    if pd.isna(val): return np.nan
+    # Convert to string, then keep digits, dots, and negative signs
+    val_str = str(val)
+    clean_val = re.sub(r'[^\d.-]', '', val_str)
+    
+    # Check if multiple dots exist (e.g. 12.3.4), keep first part
+    if clean_val.count('.') > 1:
+        clean_val = clean_val.split('.')[0] + '.' + clean_val.split('.')[1]
+        
+    return clean_val if clean_val else np.nan
 
-df[age_col] = df[age_col].apply(clean_age)
-df[age_col] = df[age_col].fillna(df[age_col].median())
-df = df[(df[age_col] > 0) & (df[age_col] < 120)]
+numeric_cols = ['Age', 'WBC_Count', 'Heart_Rate', 'Platelet_Count']
 
-# -------------------------------------------------
-# 6. Clean GENDER (keep Male/Female)
-# -------------------------------------------------
-df = df[df[gender_col].isin(["Male", "Female"])]
+# Check if columns exist to prevent KeyError
+existing_num_cols = [c for c in numeric_cols if c in df.columns]
 
-# -------------------------------------------------
-# 7. Clean BLOOD GROUP (keep as is)
-# -------------------------------------------------
-valid_blood_groups = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
-df = df[df[blood_group_col].isin(valid_blood_groups)]
+for col in existing_num_cols:
+    # First, scrub the text noise
+    df[col] = df[col].apply(clean_numeric_noise)
+    # Then convert to number
+    df[col] = pd.to_numeric(df[col], errors='coerce')
 
-# -------------------------------------------------
-# 8. Clean WBC Count
-# -------------------------------------------------
-def clean_wbc(val):
-    if isinstance(val, str):
-        v = val.lower()
-        if v == "suppressed":
-            return 3.5
-        if v == "normal":
-            return 6.0
-    return val
+# 3. Handle Age Logic
+# Replace impossible ages (<0 or >120) with NaN
+if 'Age' in df.columns:
+    df.loc[(df['Age'] < 0) | (df['Age'] > 120), 'Age'] = np.nan
 
-df[wbc_col] = df[wbc_col].apply(clean_wbc)
-df[wbc_col] = pd.to_numeric(df[wbc_col], errors="coerce")
-df[wbc_col] = df[wbc_col].fillna(df[wbc_col].median())
+# 4. Standardize Blood Group
+# Regex to keep only valid patterns (A, B, AB, O followed by + or -)
+valid_bg = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
+df.loc[~df['Blood_Group'].isin(valid_bg), 'Blood_Group'] = np.nan
 
-# -------------------------------------------------
-# 9. Clean numeric columns
-# -------------------------------------------------
-for col in [rbc_col, platelet_col, hb_col]:
-    if col:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-        df[col] = df[col].fillna(df[col].median())
+# 5. Fix Blood Pressure
+# Function to validate systolic/diastolic format (e.g., 120/80)
+def clean_bp(val):
+    if pd.isna(val): return np.nan
+    match = re.match(r'^(\d{2,3})/(\d{2,3})$', str(val))
+    return val if match else np.nan
 
-# -------------------------------------------------
-# 10. Split BLOOD PRESSURE (ONLY if present)
-# -------------------------------------------------
-if bp_col:
-    def split_bp(val):
-        if isinstance(val, str) and "/" in val:
-            try:
-                s, d = val.split("/")
-                return pd.Series([int(s), int(d)])
-            except:
-                return pd.Series([np.nan, np.nan])
-        return pd.Series([np.nan, np.nan])
+if 'Blood_Pressure' in df.columns:
+    df['Blood_Pressure'] = df['Blood_Pressure'].apply(clean_bp)
 
-    df[["Systolic_BP", "Diastolic_BP"]] = df[bp_col].apply(split_bp)
-    df.drop(columns=[bp_col], inplace=True)
-else:
-    print("⚠️ Blood Pressure column not found — skipping BP split")
+# 6. Remove Extreme Outliers
+# Using a logical cap for medical data to remove extreme anomalies
+if 'WBC_Count' in df.columns:
+    df.loc[df['WBC_Count'] > 50000, 'WBC_Count'] = np.nan
+if 'Platelet_Count' in df.columns:
+    df.loc[df['Platelet_Count'] > 900, 'Platelet_Count'] = np.nan
+if 'Heart_Rate' in df.columns:
+    df.loc[df['Heart_Rate'] > 220, 'Heart_Rate'] = np.nan
 
-# -------------------------------------------------
-# 11. Final cleanup
-# -------------------------------------------------
-df = df.dropna()
-print("Cleaned shape:", df.shape)
+# 7. Impute Missing Values
+# Fill numeric columns with Mean
+num_cols = df.select_dtypes(include=[np.number]).columns
+for col in num_cols:
+    mean_val = df[col].mean()
+    # Fallback to 0 if mean is NaN (e.g. empty column), preventing fillna failure
+    if pd.isna(mean_val):
+        mean_val = 0
+    df[col] = df[col].fillna(mean_val)
 
-# -------------------------------------------------
-# 12. Save cleaned dataset
-# -------------------------------------------------
-df.to_excel(
-    "AI_PES - Inferno DataCleaning/Cleaned_Cancer_Dataset.xlsx",
-    index=False,
-    engine="openpyxl"
-)
+# Fill categorical columns with Mode (most frequent value)
+cat_cols = df.select_dtypes(include=['object']).columns
+for col in cat_cols:
+    if not df[col].mode().empty:
+        df[col] = df[col].fillna(df[col].mode()[0])
 
-print("✅ Dataset cleaned correctly")
-print("✅ Age numeric, Gender & Blood Group preserved")
+# Ensure correct data types (int for counts/age)
+# Round first to handle float means (e.g. 35.6 -> 36) before casting to int
+if 'Age' in df.columns:
+    df['Age'] = df['Age'].round().astype(int)
+if 'Heart_Rate' in df.columns:
+    df['Heart_Rate'] = df['Heart_Rate'].round().astype(int)
+if 'WBC_Count' in df.columns:
+    df['WBC_Count'] = df['WBC_Count'].astype(float) # Keep float for mean accuracy
+
+# Create output directory if it doesn't exist
+os.makedirs(output_folder, exist_ok=True)
+
+# Save the cleaned dataset
+try:
+    df.to_excel(output_file, index=False)
+    print(f"Cleaned dataset saved to: {output_file}")
+except PermissionError:
+    print(f"\nERROR: Could not save the file because '{output_file}' is open.")
+    print("ACTION: Please CLOSE the Excel file and run the script again.")
+except Exception as e:
+    print(f"An error occurred while saving: {e}")
