@@ -27,9 +27,21 @@ for col in df.select_dtypes(include=['object']).columns:
     df[col] = df[col].apply(lambda x: x.strip() if isinstance(x, str) else x)
 
 # 1. Fix Gender values
-# Map various inputs to standard categories
-gender_map = {'male': 'Male', 'FEMALE': 'Female', 'm': 'Male', 'f': 'Female', 'Unknown': 'Unknown'}
-df['Gender'] = df['Gender'].map(gender_map).fillna('Unknown')
+# STRATEGY: Convert to lowercase first to catch "Male", "male", "MALE", "m" all at once
+# This prevents dropping valid "Male"/"Female" values that weren't in the specific map keys
+df['Gender'] = df['Gender'].astype(str).str.lower().str.strip()
+gender_map = {
+    'male': 'Male',
+    'm': 'Male',
+    'female': 'Female', 
+    'f': 'Female',
+    # Map unknown/nan to actual np.nan so mode imputation handles it later
+    'unknown': np.nan, 
+    'nan': np.nan
+}
+# Map values. Unmapped become NaN. Explicitly set unknown/nan keys to NaN too.
+# We REMOVED .fillna('Unknown') so that Mode imputation can fill these later.
+df['Gender'] = df['Gender'].map(gender_map)
 
 # 2. Fix Numeric Columns & Wrong Data Types
 # PROBLEM SOLVER: This function removes text (like 'yrs', 'bpm', ',') before converting
@@ -95,6 +107,9 @@ for col in num_cols:
         mean_val = 0
     df[col] = df[col].fillna(mean_val)
 
+# Global "Unknown" cleanup: Ensure literal "Unknown" strings in ANY column are treated as NaN
+df.replace(['Unknown', 'unknown'], np.nan, inplace=True)
+
 # Fill categorical columns with Mode (most frequent value)
 cat_cols = df.select_dtypes(include=['object']).columns
 for col in cat_cols:
@@ -108,7 +123,8 @@ if 'Age' in df.columns:
 if 'Heart_Rate' in df.columns:
     df['Heart_Rate'] = df['Heart_Rate'].round().astype(int)
 if 'WBC_Count' in df.columns:
-    df['WBC_Count'] = df['WBC_Count'].astype(float) # Keep float for mean accuracy
+    # Round WBC to 1 decimal place as requested
+    df['WBC_Count'] = df['WBC_Count'].astype(float).round(1)
 
 # Create output directory if it doesn't exist
 os.makedirs(output_folder, exist_ok=True)
