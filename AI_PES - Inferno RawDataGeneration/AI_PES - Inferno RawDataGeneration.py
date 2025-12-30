@@ -2,16 +2,18 @@
 import pandas as pd
 import numpy as np
 from faker import Faker
+from datetime import date
 
 # Initialize Faker for generating realistic data
 faker = Faker()
-
+today = date.today()
 # Number of patients to generate
 num_patients = 1000
 
 # Initialize lists to store generated data
 patient_ids = []
 full_names = []
+DOB = []
 ages = []
 genders = []
 blood_groups = []
@@ -24,6 +26,7 @@ platelet_counts = []
 hemoglobin_levels = []
 blood_pressures = []
 heart_rates = []
+diagnosis_statuses = [] # Corrected: Renamed and initialized as an empty list
 stages = []
 tumor_sizes = []
 cancer_types = []
@@ -36,8 +39,13 @@ for i in range(num_patients):
     # Full_Name: Generated using Faker
     full_names.append(faker.name())
     
+    # DOB: Generated using Faker
+    birth_date = faker.date_of_birth(minimum_age=2, maximum_age=90)
+    birth_str = birth_date.strftime("%d/%m/%Y")
+    DOB.append(birth_str)
+
     # Age: Random integer within a realistic range
-    age = np.random.randint(18, 90)
+    age = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
     ages.append(age)
     
     # Gender: Randomly selected
@@ -76,19 +84,24 @@ for i in range(num_patients):
     # Heart_Rate: Random integer within a realistic range
     heart_rates.append(np.random.randint(60, 101))
     
-    #Cancer_Type: Randomly selected cancer type
-    cancer_types.append(np.random.choice(["Benign", "Malignant"]))
-
-    # Stages: Randomly selected cancer stage
-    stages.append(np.random.choice(["I", "II", "III", "IV"]))
+    current_diagnosis_status = np.random.choice(["Positive", "Negative"], p=[0.5,0.5]) # Temporary variable
+    diagnosis_statuses.append(current_diagnosis_status) # Append to the list
     
-    # Tumor Size: Random float within a realistic range
-    tumor_sizes.append(round(np.random.uniform(1.0, 10.0), 1))
+    if current_diagnosis_status == "Positive":
+        cancer_types.append(np.random.choice(["Malignant", "Benign"]))
+        stages.append(np.random.choice(["I", "II", "III", "IV"]))
+        tumor_sizes.append(round(np.random.uniform(1.0, 12.0), 1)) # cm
+    else:
+        # If No Cancer, these fields MUST be Empty (None/NaN)
+        cancer_types.append("N/A") 
+        stages.append("N/A")
+        tumor_sizes.append("N/A") 
 
 # Create a dictionary from the generated data
 data = {
     "Patient_ID": patient_ids,
     "Full_Name": full_names,
+    "DOB": DOB,
     "Age": ages,
     "Gender": genders,
     "Blood_Group": blood_groups,
@@ -101,6 +114,7 @@ data = {
     "Hemoglobin_Level": hemoglobin_levels,
     "Blood_Pressure": blood_pressures,
     "Heart_Rate": heart_rates,
+    "Diagnosis_Status": diagnosis_statuses,
     "Cancer_Type": cancer_types,
     "Stages": stages,
     "Tumor Size": tumor_sizes
