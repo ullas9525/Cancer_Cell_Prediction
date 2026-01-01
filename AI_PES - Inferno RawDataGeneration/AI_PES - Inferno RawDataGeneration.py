@@ -26,7 +26,7 @@ platelet_counts = []
 hemoglobin_levels = []
 blood_pressures = []
 heart_rates = []
-diagnosis_statuses = [] # Corrected: Renamed and initialized as an empty list
+diagnosis_statuses = []
 stages = []
 tumor_sizes = []
 cancer_types = []
@@ -84,7 +84,7 @@ for i in range(num_patients):
     # Heart_Rate: Random integer within a realistic range
     heart_rates.append(np.random.randint(60, 101))
     
-    current_diagnosis_status = np.random.choice(["Positive", "Negative"], p=[0.5,0.5]) # Temporary variable
+    current_diagnosis_status = np.random.choice(["Positive", "Negative"], p=[0.5,0.5])
     diagnosis_statuses.append(current_diagnosis_status) # Append to the list
     
     if current_diagnosis_status == "Positive":

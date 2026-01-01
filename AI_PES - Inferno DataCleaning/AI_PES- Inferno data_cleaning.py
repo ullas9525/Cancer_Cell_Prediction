@@ -2,106 +2,271 @@ import pandas as pd
 import numpy as np
 import os
 import re
+from datetime import datetime
 
-input_url = "https://raw.githubusercontent.com/ullas9525/Cancer_Cell_Prediction/main/AI_PES%20-%20Inferno%20AnomalyInjection/AI_PES%20-%20Inferno%20AnomalousDataset.xlsx"
-output_folder = "AI_PES - Inferno DataCleaning"
-output_file = f"{output_folder}/AI_PES - Inferno CleanedDataset.xlsx"
+# --- Configuration ---
+INPUT_FILE = r'..\AI_PES - Inferno AnomalyInjection\AI_PES - Inferno AnomalousDataset.xlsx'
+OUTPUT_FOLDER = r'AI_PES - Inferno DataCleaning'
+OUTPUT_FILE = os.path.join(OUTPUT_FOLDER, 'AI_PES - Inferno CleanedDataset.xlsx')
 
-print("Loading dataset...")
-df = pd.read_excel(input_url)
+def clean_dataset():
+    print("Loading dataset...")
+    # Resolve absolute path for robustness
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    input_path = os.path.join(current_dir, INPUT_FILE)
+    
+    if not os.path.exists(input_path):
+        # Fallback if running from root
+        potential_path = os.path.abspath(INPUT_FILE)
+        if os.path.exists(potential_path):
+            input_path = potential_path
+        else:
+             raise FileNotFoundError(f"Input file not found at: {input_path} or {potential_path}")
 
-df.drop_duplicates(subset="Patient_ID", inplace=True)
+    df = pd.read_excel(input_path)
+    
+    # 1. basic string stripping
+    print("Standardizing string columns...")
+    for col in df.select_dtypes(include="object").columns:
+        df[col] = df[col].astype(str).str.strip()
+        # Convert string 'nan', 'None' to actual NaN
+        df[col] = df[col].replace(['nan', 'NaN', 'None', '', 'UNKNOWN', 'unknown'], np.nan)
 
-# ---------------- BASIC STRIP ----------------
-for col in df.select_dtypes(include="object").columns:
-    df[col] = df[col].apply(lambda x: x.strip() if isinstance(x,str) else x)
+    # ---------------- DOB & AGE ----------------
+    print("Cleaning DOB and Age...")
+    
+    # Helper to parse DOB
+    def parse_dob(x):
+        if pd.isna(x): return pd.NaT
+        # Try multiple formats
+        for fmt in ["%d/%m/%Y", "%Y-%m-%d", "%m/%d/%Y", "%d-%m-%Y"]:
+            try:
+                return pd.to_datetime(x, format=fmt)
+            except:
+                continue
+        # If timestamp, try pandas auto
+        try:
+             return pd.to_datetime(x)
+        except:
+            return pd.NaT
 
-# ---------------- GENDER ----------------
-df["Gender"] = df["Gender"].astype(str).str.lower().str.strip()
-df["Gender"] = df["Gender"].map({"male":"Male","m":"Male","female":"Female","f":"Female"})
+    df['DOB_Temp'] = df['DOB'].apply(parse_dob)
+    
+    # Clean Age first (force numeric)
+    df['Age'] = pd.to_numeric(df['Age'], errors='coerce')
+    
+    # Repair Age/DOB
+    today = pd.Timestamp.today()
+    
+    for i, row in df.iterrows():
+        age = row['Age']
+        dob = row['DOB_Temp']
+        
+        # Valid Age check (0-120)
+        is_age_valid = pd.notna(age) and (0 <= age <= 120)
+        
+        # Sync Logic
+        if is_age_valid and pd.isna(dob):
+            # Estimate DOB from Age
+            est_year = today.year - int(age)
+            df.at[i, 'DOB_Temp'] = pd.Timestamp(year=est_year, month=1, day=1)
+        elif not is_age_valid and pd.notna(dob):
+            # Calculate Age from DOB
+            calc_age = (today - dob).days // 365.25
+            if 0 <= calc_age <= 120:
+                df.at[i, 'Age'] = calc_age
+            else:
+                # DOB is likely wrong too if it gives weird age
+                df.at[i, 'Age'] = np.nan
+                df.at[i, 'DOB_Temp'] = pd.NaT
+        elif not is_age_valid and pd.isna(dob):
+            # Both missing/invalid - force Age to NaN to be imputed
+            df.at[i, 'Age'] = np.nan
+        elif is_age_valid and pd.notna(dob):
+            # Consistency check
+            calc_age = (today - dob).days // 365.25
+            if abs(calc_age - age) > 2: # Tolerance
+                # Trust DOB if reasonable, else trust Age
+                if 0 <= calc_age <= 120:
+                    df.at[i, 'Age'] = calc_age
+                else:
+                    est_year = today.year - int(age)
+                    df.at[i, 'DOB_Temp'] = pd.Timestamp(year=est_year, month=1, day=1)
+    
+    # Impute missing Age with Median
+    median_age = df['Age'].median()
+    df['Age'] = df['Age'].fillna(median_age)
+    
+    # Finalize DOB (Format DD/MM/YYYY)
+    # If still NaT, generate from Age
+    mask_nat = df['DOB_Temp'].isna()
+    df.loc[mask_nat, 'DOB_Temp'] = df.loc[mask_nat, 'Age'].apply(lambda a: pd.Timestamp(year=int(today.year - a), month=1, day=1))
+    
+    df['DOB'] = df['DOB_Temp'].dt.strftime('%d/%m/%Y')
+    df.drop(columns=['DOB_Temp'], inplace=True)
 
-# ---------------- TOBACCO ----------------
-if "Tobacco_Usage" in df.columns:
-    df["Tobacco_Usage"] = df["Tobacco_Usage"].astype(str).str.strip().str.capitalize()
-    df.loc[~df["Tobacco_Usage"].isin(["Regular","Occasional","None"]), "Tobacco_Usage"] = np.nan
+    # ---------------- GENDER ----------------
+    print("Cleaning Gender...")
+    def clean_gender(x):
+        if pd.isna(x): return np.nan
+        s = str(x).lower().strip()
+        if s in ['m', 'male']: return 'Male'
+        if s in ['f', 'female']: return 'Female'
+        return np.nan
+    
+    df['Gender'] = df['Gender'].apply(clean_gender)
+    # Impute Gender
+    df['Gender'] = df['Gender'].fillna(df['Gender'].mode()[0])
 
-# ---------------- NUMERIC CLEAN ----------------
-def clean_num(x):
-    if pd.isna(x): return np.nan
-    s = re.sub(r"[^\d.-]","",str(x))
-    return s if s else np.nan
+    # ---------------- BLOOD GROUP ----------------
+    print("Cleaning Blood Group...")
+    valid_bg = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
+    df['Blood_Group'] = df['Blood_Group'].apply(lambda x: x if x in valid_bg else np.nan)
+    df['Blood_Group'] = df['Blood_Group'].fillna(df['Blood_Group'].mode()[0])
 
-for c in ["Age","WBC_Count","Heart_Rate","Platelet_Count","Tumor Size"]:
-    if c in df.columns:
-        df[c] = pd.to_numeric(df[c].apply(clean_num), errors="coerce")
+    # ---------------- BLOOD PRESSURE ----------------
+    print("Cleaning Blood Pressure...")
+    def clean_bp(x):
+        if pd.isna(x): return np.nan
+        s = str(x)
+        # Extract numbers using regex (e.g., 120/80, 120-80, 120 / 80)
+        match = re.search(r'(\d{2,3})\D+(\d{2,3})', s)
+        if match:
+            sys = int(match.group(1))
+            dia = int(match.group(2))
+            # Basic physiological checks (Sys > Dia, reasonable range)
+            if 50 < sys < 250 and 30 < dia < 150 and sys > dia:
+                return f"{sys}/{dia}"
+        return np.nan
 
-# ---------------- AGE RULE ----------------
-if "Age" in df.columns:
-    df.loc[(df["Age"]<0)|(df["Age"]>120),"Age"] = np.nan
+    df['Blood_Pressure'] = df['Blood_Pressure'].apply(clean_bp)
+    df['Blood_Pressure'] = df['Blood_Pressure'].fillna(df['Blood_Pressure'].mode()[0])
 
-# ---------------- BLOOD GROUP ----------------
-valid_bg = ["A+","A-","B+","B-","AB+","AB-","O+","O-"]
-df.loc[~df["Blood_Group"].isin(valid_bg),"Blood_Group"] = np.nan
+    # ---------------- LIFESTYLE ----------------
+    print("Cleaning Lifestyle Columns...")
+    # Map valid values
+    lifestyle_maps = {
+        'Physical_Activity': (['Low', 'Moderate', 'High'], 'Low'), # Default/Mode
+        'Acholic_Consumption': (['None', 'Occasional', 'Regular'], 'None'),
+        'Tobacco_Usage': (['None', 'Occasional', 'Regular'], 'None')
+    }
+    
+    for col, (valid, default) in lifestyle_maps.items():
+        if col in df.columns:
+            # Normalize first
+            df[col] = df[col].astype(str).str.capitalize()
+            # Set invalid to NaN then fill
+            df.loc[~df[col].isin(valid), col] = np.nan
+            df[col] = df[col].fillna(df[col].mode()[0] if not df[col].mode().empty else default)
 
-# ---------------- BLOOD PRESSURE ----------------
-if "Blood_Pressure" in df.columns:
-    df["Blood_Pressure"] = df["Blood_Pressure"].apply(lambda x: x if re.match(r"^\d{2,3}/\d{2,3}$",str(x)) else np.nan)
+    # ---------------- NUMERIC LABS ----------------
+    print("Cleaning Numeric Lab Values...")
+    numeric_cols = ['WBC_Count', 'RBC_Count', 'Platelet_Count', 'Hemoglobin_Level', 'Heart_Rate']
+    
+    for col in numeric_cols:
+        if col in df.columns:
+            # Force numeric
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            # Simple outlier handling (IQR or range method - utilizing median replacement as requested)
+            # Using median median absolute deviation or just replacement of obvious outliers
+            # Sticking to valid ranges as a filter, else Median
+            
+            # ranges dictionary (approximate medical ranges for filtering extreme errors)
+            # if outlier => replace with median
+            median_val = df[col].median()
+            
+            # Define loose bounds to catch errors vs just high values
+            # WBC: 0 - 200,000 ?? (Normal 4500-11000)
+            # RBC: 0 - 10
+            # Platelet: 0 - 1,000,000
+            # Hb: 0 - 25
+            # HR: 0 - 220
+            
+            # Using IQR method for robust outlier detection
+            Q1 = df[col].quantile(0.25)
+            Q3 = df[col].quantile(0.75)
+            IQR = Q3 - Q1
+            lower = Q1 - 1.5 * IQR
+            upper = Q3 + 1.5 * IQR
+            
+            # Replace outliers
+            outlier_mask = (df[col] < lower) | (df[col] > upper) | df[col].isna()
+            df.loc[outlier_mask, col] = median_val
 
-# ---------------- DOB CLEAN ----------------
-if "DOB" in df.columns:
-    df["DOB"] = pd.to_datetime(df["DOB"], errors="coerce", dayfirst=True)
-    df["Age"] = pd.Timestamp.today().year - df["DOB"].dt.year
+    # ---------------- DIAGNOSIS LOGIC ----------------
+    print("Applying Diagnosis Logic...")
+    if 'Diagnosis_Status' in df.columns:
+        # Normalize Status
+        df['Diagnosis_Status'] = df['Diagnosis_Status'].str.capitalize()
+        # Ensure only Positive/Negative
+        df['Diagnosis_Status'] = df['Diagnosis_Status'].apply(lambda x: x if x in ['Positive', 'Negative'] else np.nan)
+        df['Diagnosis_Status'] = df['Diagnosis_Status'].fillna(df['Diagnosis_Status'].mode()[0])
 
-# ---------------- DIAGNOSIS LOGIC ----------------
-if "Diagnosis_Status" in df.columns:
-    neg = df["Diagnosis_Status"].str.lower()=="negative"
-    if "Cancer_Type" in df.columns:
-        df.loc[neg,"Cancer_Type"] = "NA"
-    if "Stages" in df.columns:
-        df.loc[neg,"Stages"] = "NA"
-    if "Tumor Size" in df.columns:
-        df.loc[neg,"Tumor Size"] = 0
+        negative_mask = df['Diagnosis_Status'] == 'Negative'
+        positive_mask = df['Diagnosis_Status'] == 'Positive'
 
-# ---------------- OUTLIERS ----------------
-df.loc[df["WBC_Count"]>50000,"WBC_Count"] = np.nan
-df.loc[df["Platelet_Count"]>900,"Platelet_Count"] = np.nan
-df.loc[df["Heart_Rate"]>220,"Heart_Rate"] = np.nan
-df.loc[(df["Tumor Size"]<0)|(df["Tumor Size"]>100),"Tumor Size"] = np.nan
+        # Negative Rules
+        df.loc[negative_mask, 'Cancer_Type'] = "NA"
+        df.loc[negative_mask, 'Stages'] = "NA"
+        df.loc[negative_mask, 'Tumor Size'] = "NA"
 
-# ---------------- IMPUTE ----------------
-for c in df.select_dtypes(include=np.number):
-    df[c] = df[c].fillna(df[c].median())
+        # Positive Rules
+        # Cancer_Type
+        valid_cancer = ['Benign', 'Malignant']
+        df.loc[positive_mask, 'Cancer_Type'] = df.loc[positive_mask, 'Cancer_Type'].apply(lambda x: x if x in valid_cancer else np.nan)
+        df.loc[positive_mask, 'Cancer_Type'] = df.loc[positive_mask, 'Cancer_Type'].fillna(df.loc[positive_mask, 'Cancer_Type'].mode()[0])
+        
+        # Stages
+        valid_stages = ['I', 'II', 'III', 'IV']
+        df.loc[positive_mask, 'Stages'] = df.loc[positive_mask, 'Stages'].apply(lambda x: x if x in valid_stages else np.nan)
+        df.loc[positive_mask, 'Stages'] = df.loc[positive_mask, 'Stages'].fillna(df.loc[positive_mask, 'Stages'].mode()[0])
 
-for c in df.select_dtypes(include="object"):
-    df[c] = df[c].fillna("NA")
+        # Tumor Size
+        # Clean numeric
+        df['Tumor Size'] = pd.to_numeric(df['Tumor Size'], errors='coerce')
+        
+        # For positives, must be > 0. If <=0 or NaN, replace with median of positives
+        pos_tumor_median = df.loc[positive_mask, 'Tumor Size'].median()
+        if pd.isna(pos_tumor_median): pos_tumor_median = 1.0 # Fallback
+        
+        def clean_pos_tumor(x):
+            if pd.isna(x) or x <= 0: return pos_tumor_median
+            return x
+        
+        df.loc[positive_mask, 'Tumor Size'] = df.loc[positive_mask, 'Tumor Size'].apply(clean_pos_tumor)
+        
+        # Convert back to mixed type if needed (since "NA" is string)
+        # But 'Tumor Size' column is object now.
+        # Ensure 'Tumor Size' for negatives is "NA" explicitly again just in case
+        df.loc[negative_mask, 'Tumor Size'] = "NA"
 
-# ---------------- FINAL TYPES ----------------
-if "Age" in df.columns:
-    df["Age"] = df["Age"].round().astype(int)
-if "Heart_Rate" in df.columns:
-    df["Heart_Rate"] = df["Heart_Rate"].round().astype(int)
-if "WBC_Count" in df.columns:
-    df["WBC_Count"] = df["WBC_Count"].round(1)
+    # ---------------- FINAL CHECK ----------------
+    print("Final missing values check...")
+    # Fill any remaining NaNs (catch-all)
+    for col in df.columns:
+        if df[col].isna().sum() > 0:
+            if pd.api.types.is_numeric_dtype(df[col]):
+                df[col] = df[col].fillna(df[col].median())
+            else:
+                df[col] = df[col].fillna(df[col].mode()[0] if not df[col].mode().empty else "Unknown")
+    
+    # Save
+    output_path = os.path.join(current_dir, 'AI_PES - Inferno CleanedDataset.xlsx')
+    
+    df.to_excel(output_path, index=False)
+    
+    print("------------------------------------------------")
+    print("CLEAN DATASET SAVED SUCCESSFULLY")
+    print(f"Location: {output_path}")
+    print("------------------------------------------------")
+    # Quick Validation Print
+    print("\nValidation Summary:")
+    print(f"Missing Values: {df.isnull().sum().sum()}")
+    print(f"Unique Gender: {df['Gender'].unique()}")
+    print(f"Unique Blood_Group: {df['Blood_Group'].unique()}")
+    if "Diagnosis_Status" in df.columns:
+         print(f"Unique Diagnosis_Status: {df['Diagnosis_Status'].unique()}")
 
-# -------- FINAL PRESENTATION PATCH --------
-
-# 1. DOB → format DD/MM/YYYY (remove timestamps)
-if "DOB" in df.columns:
-    df["DOB"] = pd.to_datetime(df["DOB"], errors="coerce", dayfirst=True)
-    df["DOB"] = df["DOB"].dt.strftime("%d/%m/%Y")
-
-# 2. Alcoholic_Consumption & Tobacco_Usage: replace NA with "None"
-for col in ["Acholic_Consumption", "Tobacco_Usage"]:
-    if col in df.columns:
-        df[col] = df[col].replace("NA", "None")
-
-# 3. Tumor Size: convert 0 → "NA" for Negative patients
-if "Diagnosis_Status" in df.columns and "Tumor Size" in df.columns:
-    neg = df["Diagnosis_Status"].str.lower() == "negative"
-    df.loc[neg, "Tumor Size"] = "NA"
-
-os.makedirs(output_folder, exist_ok=True)
-df.to_excel(output_file, index=False)
-
-print("CLEAN DATASET SAVED SUCCESSFULLY")
-print(f"Cleaned dataset saved to: {output_file}")
+if __name__ == "__main__":
+    clean_dataset()
