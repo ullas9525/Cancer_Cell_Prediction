@@ -5,25 +5,18 @@ import re
 from datetime import datetime
 
 # --- Configuration ---
-INPUT_FILE = r'..\AI_PES - Inferno AnomalyInjection\AI_PES - Inferno AnomalousDataset.xlsx'
+# --- Configuration ---
+INPUT_FILE = "https://raw.githubusercontent.com/ullas9525/Cancer_Cell_Prediction/main/AI_PES%20-%20Inferno%20AnomalyInjection/AI_PES%20-%20Inferno%20AnomalousDataset.xlsx"
 OUTPUT_FOLDER = r'AI_PES - Inferno DataCleaning'
 OUTPUT_FILE = os.path.join(OUTPUT_FOLDER, 'AI_PES - Inferno CleanedDataset.xlsx')
+
 
 def clean_dataset():
     print("Loading dataset...")
     # Resolve absolute path for robustness
     current_dir = os.path.dirname(os.path.abspath(__file__))
     input_path = os.path.join(current_dir, INPUT_FILE)
-    
-    if not os.path.exists(input_path):
-        # Fallback if running from root
-        potential_path = os.path.abspath(INPUT_FILE)
-        if os.path.exists(potential_path):
-            input_path = potential_path
-        else:
-             raise FileNotFoundError(f"Input file not found at: {input_path} or {potential_path}")
-
-    df = pd.read_excel(input_path)
+    df = pd.read_excel(INPUT_FILE)
     
     # 1. basic string stripping
     print("Standardizing string columns...")
@@ -168,20 +161,8 @@ def clean_dataset():
             # Force numeric
             df[col] = pd.to_numeric(df[col], errors='coerce')
             
-            # Simple outlier handling (IQR or range method - utilizing median replacement as requested)
-            # Using median median absolute deviation or just replacement of obvious outliers
-            # Sticking to valid ranges as a filter, else Median
-            
-            # ranges dictionary (approximate medical ranges for filtering extreme errors)
-            # if outlier => replace with median
             median_val = df[col].median()
             
-            # Define loose bounds to catch errors vs just high values
-            # WBC: 0 - 200,000 ?? (Normal 4500-11000)
-            # RBC: 0 - 10
-            # Platelet: 0 - 1,000,000
-            # Hb: 0 - 25
-            # HR: 0 - 220
             
             # Using IQR method for robust outlier detection
             Q1 = df[col].quantile(0.25)

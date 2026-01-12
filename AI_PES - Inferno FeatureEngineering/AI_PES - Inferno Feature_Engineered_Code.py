@@ -2,7 +2,8 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 
-file_path = "/content/AI_PES - Inferno CleanedDataset (2).xlsx"
+file_path = "https://raw.githubusercontent.com/ullas9525/Cancer_Cell_Prediction/main/AI_PES%20-%20Inferno%20DataCleaning/AI_PES%20-%20Inferno%20CleanedDataset.xlsx"
+
 df = pd.read_excel(file_path)
 
 print("Initial shape:", df.shape)
@@ -56,7 +57,7 @@ else:
     X = df
     y = None
 
-df.to_csv("feature_engineered_data.csv", index=False)
+df.to_excel("AI_PES - Inferno FeatureEngineering/AI_PES - Inferno Feature_Engineered_Data.xlsx", index=False)
 
 print("Final shape:", df.shape)
 print("Feature Engineering Completed Successfully.")
