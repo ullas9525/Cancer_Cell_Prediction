@@ -9,7 +9,7 @@ feature_file_path = (
 )
 
 # Read Excel file from GitHub
-data = pd.read_excel(feature_file_path, engine="openpyxl")
+data = pd.read_excel(feature_file_path,engine='openpyxl')
 
 # Clean column names (remove spaces, lowercase)
 data.columns = data.columns.str.strip()
@@ -49,8 +49,8 @@ train_data = pd.concat([X_train, y_train], axis=1)
 test_data = pd.concat([X_test, y_test], axis=1)
 
 # Save output files
-train_data.to_excel("train_data.xlsx", index=False)
-test_data.to_excel("test_data.xlsx", index=False)
+train_data.to_excel("AI_PES - Inferno SplittingofData/AI_PES - Inferno Training_data.xlsx", index=False)
+test_data.to_excel("AI_PES - Inferno SplittingofData/AI_PES - Inferno Testing_data.xlsx", index=False)
 
 print("✅ Data splitting completed successfully!")
 print("Train data shape:", train_data.shape)
