@@ -139,18 +139,32 @@ def clean_dataset():
     print("Cleaning Lifestyle Columns...")
     # Map valid values
     lifestyle_maps = {
-        'Physical_Activity': (['Low', 'Moderate', 'High'], 'Low'), # Default/Mode
+        'Physical_Activity': (['Low', 'Moderate', 'High'], 'Low'), 
         'Acholic_Consumption': (['None', 'Occasional', 'Regular'], 'None'),
         'Tobacco_Usage': (['None', 'Occasional', 'Regular'], 'None')
     }
     
     for col, (valid, default) in lifestyle_maps.items():
         if col in df.columns:
-            # Normalize first
-            df[col] = df[col].astype(str).str.capitalize()
-            # Set invalid to NaN then fill
+            # Handle NaNs explicitly first - if it's NaN, it means 'None' for these specific cols?
+            # User implies missing means None.
+            # Convert NaN to 'None' string first if that's the intention, 
+            # Or ensure 'None' is used for filling.
+            
+            # First clean strings
+            df[col] = df[col].astype(str).str.strip().str.capitalize()
+            
+            # 'Nan' from string conversion of np.nan needs to be 'None'
+            # Also actual 'None' string
+            df[col] = df[col].replace(['Nan', 'Nan', ''], default)
+            
+            # Now set anything NOT in valid to NaN (invalid data)
+            # unexpected strings that aren't 'None'/'Occasional'/'Regular'
             df.loc[~df[col].isin(valid), col] = np.nan
-            df[col] = df[col].fillna(df[col].mode()[0] if not df[col].mode().empty else default)
+            
+            # Finally fill potential real NaNs (from invalid junk) with default (None)
+            # Instead of Mode, since 'None' is likely the safe default for these.
+            df[col] = df[col].fillna(default)
 
     # ---------------- NUMERIC LABS ----------------
     print("Cleaning Numeric Lab Values...")
