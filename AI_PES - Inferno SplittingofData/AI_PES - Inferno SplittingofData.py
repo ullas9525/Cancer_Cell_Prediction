@@ -3,9 +3,7 @@ from sklearn.model_selection import train_test_split
 
 # GitHub RAW Excel file
 feature_file_path = (
-    "https://raw.githubusercontent.com/ullas9525/Cancer_Cell_Prediction/main/"
-    "AI_PES%20-%20Inferno%20FeatureEngineering/"
-    "AI_PES%20-%20Inferno%20Feature_Engineered_Data.xlsx"
+    "https://raw.githubusercontent.com/ullas9525/Cancer_Cell_Prediction/main/AI_PES%20-%20Inferno%20FeatureEngineering/AI_PES%20-%20Inferno%20Feature_Engineered_Data.xlsx"
 )
 
 # Read Excel file from GitHub
