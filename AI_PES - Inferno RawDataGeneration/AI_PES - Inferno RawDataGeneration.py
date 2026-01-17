@@ -36,8 +36,6 @@ cancer_types = []  # List for Cancer Type (if Positive)
 stages = []  # List for Cancer Stage (if Positive)
 tumor_sizes = []  # List for Tumor Size (if Positive)
 
-print(f"Generating {num_patients} patients with Risk Logic...")  # Notify user of start
-
 for i in range(num_patients):  # Loop through sample count
     # --- 1. Basic Info ---
     # Age (Weighted towards older for cancer realism)
@@ -133,9 +131,6 @@ for i in range(num_patients):  # Loop through sample count
     # --- 4. Diagnosis Assignment ---
     # Sigmoid-ish probability map
     # Base risk is low (~10%). Max risk approaches 95%.
-    # threshold normalization
-    # Map score 0 -> 5% prob, Score 100 -> 95% prob
-    # STEEPER CURVE: Divisor changed from 15 to 8. This makes the boundary sharper.
     prob_positive = 1 / (1 + np.exp(-(risk_score - 50) / 8))  # Calculate cancer probability using sigmoid
     
     diagnosis = np.random.choice(["Positive", "Negative"], p=[prob_positive, 1 - prob_positive])  # Assign diagnosis based on prob
