@@ -10,6 +10,8 @@ from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, roc_auc_score, log_loss, confusion_matrix, classification_report, roc_curve
 from imblearn.over_sampling import SMOTE
+from sklearn.preprocessing import PolynomialFeatures, StandardScaler
+from sklearn.ensemble import GradientBoostingClassifier
 
 # 1. Load Data
 TRAIN_URL = "https://raw.githubusercontent.com/ullas9525/Cancer_Cell_Prediction/main/AI_PES%20-%20Inferno%20SplittingofData/AI_PES%20-%20Inferno%20Training_data.xlsx"
@@ -19,11 +21,6 @@ print("Loading Data...")
 df_train = pd.read_excel(TRAIN_URL)
 df_test = pd.read_excel(TEST_URL)
 
-# 2. Preprocessing
-# 2. Preprocessing
-# Remove LEAKAGE columns (Post-diagnosis info)
-# 'Stages', 'Tumor Size', 'Cancer_Type_Malignant' are direct indicators of the label.
-# 'Tumor_Age_Ratio' is derived from Tumor Size.
 leakage_cols = ['Stages', 'Tumor Size', 'Tumor_Age_Ratio', 'Cancer_Type_Malignant']
 
 print(f"Dropping Leakage Columns: {leakage_cols}")
@@ -46,11 +43,6 @@ X_test = pd.get_dummies(X_test, drop_first=True)
 
 # Align Columns
 X_train, X_test = X_train.align(X_test, join='left', axis=1, fill_value=0)
-
-# 3. Feature Engineering & SMOTE
-print("Applying Interaction Features & SMOTE...")
-from sklearn.preprocessing import PolynomialFeatures, StandardScaler
-from sklearn.ensemble import GradientBoostingClassifier
 
 # Poly Features (Interaction terms) to find hidden signals
 poly = PolynomialFeatures(degree=2, interaction_only=True, include_bias=False)
