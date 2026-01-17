@@ -79,11 +79,19 @@ for name, model in models.items():
     y_prob = model.predict_proba(X_test_scaled)[:, 1]
     
     # Metrics
+    from sklearn.metrics import f1_score
     acc = accuracy_score(y_test, y_pred)
     roc = roc_auc_score(y_test, y_prob)
     ll = log_loss(y_test, y_prob)
+    f1 = f1_score(y_test, y_pred)
     
+    # Cross-Validation (5-fold)
+    cv_scores = cross_val_score(model, X_train_sm, y_train_sm, cv=5, scoring='accuracy')
+    cv_acc = cv_scores.mean()
+
     print(f"Accuracy: {acc*100:.2f}%")
+    print(f"Cross-Validated Accuracy: {cv_acc*100:.2f}%")
+    print(f"F1 Score: {f1:.4f}")
     print(f"ROC-AUC: {roc:.4f}")
     print(f"Log Loss: {ll:.4f}")
     print("Confusion Matrix:")
@@ -98,6 +106,7 @@ for name, model in models.items():
     if acc > best_acc:
         best_acc = acc
         best_model_name = name
+        best_model = model
 
     # ROC Curve Plot
     fpr, tpr, _ = roc_curve(y_test, y_prob)
@@ -113,3 +122,22 @@ plt.savefig("AI_PES - Inferno ModelTraining/AI_PES - Inferno ROC_Curve.png")
 print("\nROC Curve saved.")
 
 print(f"\n>>> BEST MODEL: {best_model_name} with Accuracy: {best_acc*100:.2f}% <<<")
+
+# Save Predictions to Excel
+print("Saving predictions to Excel...")
+X_test_final = X_test.copy()
+X_test_final['Actual_Diagnosis'] = y_test
+X_test_final['Predicted_Diagnosis'] = best_model.predict(X_test_scaled) if best_model_name == "Gradient Boosting" else best_model.predict(X_test)
+# Note: Gradient Boosting used scaled data in previous iterations if differentiated, 
+# but here standard X_test might be used depending on pipeline. 
+# Looking at code: All models fit on X_train_sm. 
+# If Random Forest was best, it fits on X_train_sm. 
+# Wait, X_train_sm was created from X_train_scaled. 
+# So ALL models need X_test_scaled!
+# Let's fix that in prediction line inside loop too.
+# Previous code: y_pred = model.predict(X_test_scaled) 
+# So we must use X_test_scaled for final prediction too.
+
+X_test_final['Predicted_Diagnosis'] = best_model.predict(X_test_scaled)
+X_test_final.to_excel("AI_PES - Inferno ModelTraining/AI_PES - Inferno Model_Predictions.xlsx", index=False)
+print("Predictions saved to 'AI_PES - Inferno ModelTraining/AI_PES - Inferno Model_Predictions.xlsx'")
