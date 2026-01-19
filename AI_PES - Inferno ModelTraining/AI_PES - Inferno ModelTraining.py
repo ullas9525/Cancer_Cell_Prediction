@@ -2,7 +2,6 @@ import pandas as pd  # Import pandas for data manipulation
 import numpy as np  # Import numpy for numerical operations
 import matplotlib.pyplot as plt  # Import matplotlib for plotting
 import joblib  # Import joblib for model saving
-import seaborn as sns  # Import seaborn for styling
 from sklearn.model_selection import cross_val_score  # Import cross-validation tool
 from sklearn.preprocessing import LabelEncoder  # Import Label Encoder
 from sklearn.linear_model import LogisticRegression  # Import Logistic Regression
