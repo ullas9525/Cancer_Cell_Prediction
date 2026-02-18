@@ -9,6 +9,9 @@ from sklearn.linear_model import LogisticRegression  # Model: LR
 from sklearn.tree import DecisionTreeClassifier  # Model: DT
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier  # Model: RF, GB
 from sklearn.metrics import accuracy_score, roc_auc_score, log_loss, confusion_matrix, classification_report, roc_curve, f1_score  # Metrics
+from openpyxl import load_workbook
+from openpyxl.chart import LineChart, Reference, Series
+from openpyxl.utils import get_column_letter
 
 # ---------------- CONFIGURATION ----------------
 TRAIN_URL = "https://raw.githubusercontent.com/ullas9525/Cancer_Cell_Prediction/main/AI_PES%20-%20Inferno%20SplittingofData/AI_PES%20-%20Inferno%20Training_data.xlsx"
@@ -112,6 +115,16 @@ for name, config in models.items():
     print(f"  F1 Score: {f1:.4f}")
     print(f"  Log Loss: {ll:.4f}")
     print("  Confusion Matrix:\n", confusion_matrix(y_test, y_pred))
+    print("  Confusion Matrix:\n", confusion_matrix(y_test, y_pred))
+
+    # Append Results
+    results.append({
+        "Model": name,
+        "Accuracy": acc,
+        "ROC-AUC": roc,
+        "F1 Score": f1,
+        "Log Loss": ll
+    })
     
     # Store results
     if roc > best_overall_score:  # Selection criteria: ROC-AUC
@@ -141,15 +154,65 @@ joblib.dump(best_overall_model, model_path)
 print(f"Best Model ({best_overall_model_name}) saved to: {model_path}")
 
 # Save Predictions
-print("Saving predictions to Excel...")
-X_test_final = X_test.copy()  # Use the test features dataframe
+# ----------------- 6. VISUALIZATION (CHARTS) -----------------
+print("Generating Visualization Charts in Excel...")
+
+# Output Path
+pred_path = f"{OUTPUT_DIR}/AI_PES - Inferno FinalPredictionChart.xlsx"
+
+# Create Metrics DataFrame
+metrics_df = pd.DataFrame(results)
+
+# Create Prediction DataFrame (Re-added)
+X_test_final = X_test.copy()
 X_test_final['Actual_Diagnosis'] = y_test
 X_test_final['Predicted_Diagnosis'] = best_overall_model.predict(X_test_pca)
 X_test_final['Prediction_Probability'] = best_overall_model.predict_proba(X_test_pca)[:, 1]
 
-pred_path = f"{OUTPUT_DIR}/AI_PES - Inferno Model_Predictions.xlsx"
-X_test_final.to_excel(pred_path, index=False)
-print(f"Predictions saved to: {pred_path}")
+# Create Single Sheet layout
+with pd.ExcelWriter(pred_path, engine='openpyxl') as writer:
+    # Write Predictions data (Left Side)
+    X_test_final.to_excel(writer, sheet_name='Final Analysis', index=False, startrow=0)
+    
+    # Calculate offset for Metrics Table
+    offset = len(X_test_final.columns) + 2
+    
+    # Write Metrics Table (Right Side)
+    metrics_df.to_excel(writer, sheet_name='Final Analysis', index=False, startrow=0, startcol=offset)
 
+# Open Workbook to add Charts
+wb = load_workbook(pred_path)
+ws = wb['Final Analysis']
+
+# Create Line Chart
+chart = LineChart()
+chart.title = "Actual vs Predicted"
+chart.style = 13  # Standard line style
+chart.y_axis.title = 'Diagnosis (0=Neg, 1=Pos)'
+chart.x_axis.title = 'Patient Index'
+
+# Define data for Actual and Predicted Columns
+total_cols = len(X_test_final.columns)
+
+# Create Reference for Actual Data (Blue)
+actual_data = Reference(ws, min_col=total_cols-2, min_row=1, max_col=total_cols-2, max_row=len(X_test_final)+1)
+series_actual = Series(actual_data, title="Actual")
+series_actual.graphicalProperties.line.solidFill = "0000FF"  # Blue Color
+
+# Create Reference for Predicted Data (Red)
+predicted_data = Reference(ws, min_col=total_cols-1, min_row=1, max_col=total_cols-1, max_row=len(X_test_final)+1)
+series_predicted = Series(predicted_data, title="Predicted")
+series_predicted.graphicalProperties.line.solidFill = "FF0000"  # Red Color
+
+# Add Series to Chart
+chart.series.append(series_actual)
+chart.series.append(series_predicted)
+
+# Place Chart below Metrics Table (Same column offset)
+metrics_start_col = offset + 1
+chart_cell = get_column_letter(metrics_start_col) + "10"
+ws.add_chart(chart, chart_cell)
+
+wb.save(pred_path)
 # Final Summary
 print(f"\n>>> BEST MODEL: {best_overall_model_name} with Accuracy: {best_overall_acc*100:.2f}% <<<")
