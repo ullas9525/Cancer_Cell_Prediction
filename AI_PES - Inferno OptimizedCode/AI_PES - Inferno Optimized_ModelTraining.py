@@ -163,7 +163,7 @@ pred_path = f"{OUTPUT_DIR}/AI_PES - Inferno FinalPredictionChart.xlsx"
 # Create Metrics DataFrame
 metrics_df = pd.DataFrame(results)
 
-# Create Prediction DataFrame (Re-added)
+# Create Prediction DataFrame
 X_test_final = X_test.copy()
 X_test_final['Actual_Diagnosis'] = y_test
 X_test_final['Predicted_Diagnosis'] = best_overall_model.predict(X_test_pca)
@@ -208,7 +208,7 @@ series_predicted.graphicalProperties.line.solidFill = "FF0000"  # Red Color
 chart.series.append(series_actual)
 chart.series.append(series_predicted)
 
-# Place Chart below Metrics Table (Same column offset)
+# Place Chart below Metrics Table
 metrics_start_col = offset + 1
 chart_cell = get_column_letter(metrics_start_col) + "10"
 ws.add_chart(chart, chart_cell)
