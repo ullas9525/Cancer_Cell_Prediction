@@ -10,7 +10,8 @@ from sklearn.tree import DecisionTreeClassifier  # Model: DT
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier  # Model: RF, GB
 from sklearn.metrics import accuracy_score, roc_auc_score, log_loss, confusion_matrix, classification_report, roc_curve, f1_score  # Metrics
 from openpyxl import load_workbook
-from openpyxl.chart import LineChart, Reference, Series
+from openpyxl.chart import BarChart, PieChart, Reference, Series
+from openpyxl.chart.label import DataLabelList
 from openpyxl.utils import get_column_letter
 
 # ---------------- CONFIGURATION ----------------
@@ -155,63 +156,137 @@ print(f"Best Model ({best_overall_model_name}) saved to: {model_path}")
 
 # Save Predictions
 # ----------------- 6. VISUALIZATION (CHARTS) -----------------
-print("Generating Visualization Charts in Excel...")
+print("Generating Dashboard (Feature Imp, Distribution, Metrics)...")
 
-# Output Path
-pred_path = f"{OUTPUT_DIR}/AI_PES - Inferno FinalPredictionChart.xlsx"
+# 1. Feature Importance (Helper RF on Original Features)
+print("Calculating Feature Importance...")
+rf_feat = RandomForestClassifier(random_state=42)
+rf_feat.fit(X_train, y_train)
+feat_imp_df = pd.DataFrame({
+    'Feature': X_train.columns,
+    'Importance': rf_feat.feature_importances_
+}).sort_values(by='Importance', ascending=False).head(10)  # Top 10 Features
+feat_imp_df['Importance'] = feat_imp_df['Importance'].round(2)  # Round to 2 decimals (shorter labels)
 
-# Create Metrics DataFrame
-metrics_df = pd.DataFrame(results)
-
-# Create Prediction DataFrame
+# 2. Prediction Confidence Histogram
 X_test_final = X_test.copy()
 X_test_final['Actual_Diagnosis'] = y_test
 X_test_final['Predicted_Diagnosis'] = best_overall_model.predict(X_test_pca)
 X_test_final['Prediction_Probability'] = best_overall_model.predict_proba(X_test_pca)[:, 1]
 
-# Create Single Sheet layout
+# Calculate Confidence: High if probability is near 0 or 1
+X_test_final['Model_Confidence'] = X_test_final['Prediction_Probability'].apply(lambda x: max(x, 1-x))
+
+# Create bins for Confidence (50% to 100%)
+bins = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+labels = ['50-60%', '60-70%', '70-80%', '80-90%', '90-100%']
+X_test_final['Conf_Bin'] = pd.cut(X_test_final['Model_Confidence'], bins=bins, labels=labels, include_lowest=True)
+
+hist_df = X_test_final['Conf_Bin'].value_counts().sort_index().reset_index()
+hist_df.columns = ['Confidence Level', 'Count']
+
+# Output Path
+pred_path = f"{OUTPUT_DIR}/AI_PES - Inferno FinalPredictionChart.xlsx"
+
+# Create Metrics DataFrame
+metrics_df = pd.DataFrame(results).round(2)  # Round all metrics to 2 decimals
+
+# Create Single Sheet layout and Write Tables
 with pd.ExcelWriter(pred_path, engine='openpyxl') as writer:
-    # Write Predictions data (Left Side)
+    # A. Predictions (Left Side) - Row 0
     X_test_final.to_excel(writer, sheet_name='Final Analysis', index=False, startrow=0)
     
-    # Calculate offset for Metrics Table
+    # Calculate offset for Right Side components
     offset = len(X_test_final.columns) + 2
     
-    # Write Metrics Table (Right Side)
+    # B. Metrics Table (Right Side) - Row 0
     metrics_df.to_excel(writer, sheet_name='Final Analysis', index=False, startrow=0, startcol=offset)
+    
+    # C. Feature Importance Table (Right Side) - Row 8 (below Metrics)
+    feat_imp_df.to_excel(writer, sheet_name='Final Analysis', index=False, startrow=8, startcol=offset)
+    
+    # D. Histogram Table (Right Side) - Row 22 (below Features)
+    hist_df.to_excel(writer, sheet_name='Final Analysis', index=False, startrow=22, startcol=offset)
 
 # Open Workbook to add Charts
 wb = load_workbook(pred_path)
 ws = wb['Final Analysis']
 
-# Create Line Chart
-chart = LineChart()
-chart.title = "Actual vs Predicted"
-chart.style = 13  # Standard line style
-chart.y_axis.title = 'Diagnosis (0=Neg, 1=Pos)'
-chart.x_axis.title = 'Patient Index'
+# Helper to get cell address
+def get_cell(col_idx, row_idx):
+    return f"{get_column_letter(col_idx)}{row_idx}"
 
-# Define data for Actual and Predicted Columns
-total_cols = len(X_test_final.columns)
+# Common start column for right-side components
+start_col = offset + 1  # 1-based index
 
-# Create Reference for Actual Data (Blue)
-actual_data = Reference(ws, min_col=total_cols-2, min_row=1, max_col=total_cols-2, max_row=len(X_test_final)+1)
-series_actual = Series(actual_data, title="Actual")
-series_actual.graphicalProperties.line.solidFill = "0000FF"  # Blue Color
+# --- Chart 1: Metrics Summary (Bar Chart) ---
+chart1 = BarChart()
+chart1.type = "col"  # Vertical Bars
+chart1.title = "Key Performance Metrics"
+chart1.y_axis.title = 'Score'
+chart1.x_axis.title = 'Model'
+chart1.x_axis.tickLblPos = "low" # Force Model Names to appear at bottom
+chart1.x_axis.delete = False # Ensure Axis is visible
+chart1.x_axis.majorTickMark = "out" # Ensure tick marks are visible
+chart1.height = 15
+chart1.width = 25
 
-# Create Reference for Predicted Data (Red)
-predicted_data = Reference(ws, min_col=total_cols-1, min_row=1, max_col=total_cols-1, max_row=len(X_test_final)+1)
-series_predicted = Series(predicted_data, title="Predicted")
-series_predicted.graphicalProperties.line.solidFill = "FF0000"  # Red Color
+# Define Data and Category references for the chart
+categories1 = Reference(ws, min_col=start_col, min_row=2, max_row=len(models)+1)
+# Data: Accuracy, ROC, F1 (Col 2, 3, 4 relative to start_col)
+data1 = Reference(ws, min_col=start_col+1, min_row=1, max_col=start_col+3, max_row=len(models)+1)
 
-# Add Series to Chart
-chart.series.append(series_actual)
-chart.series.append(series_predicted)
+chart1.add_data(data1, titles_from_data=True)
+chart1.set_categories(categories1)
+# Removed Data Labels for Metrics Chart to prevent collision (Bars are grouped)
+ws.add_chart(chart1, get_cell(start_col + 7, 1))  # Place to the right of tables
 
-# Place Chart below Metrics Table
-metrics_start_col = offset + 1
-chart_cell = get_column_letter(metrics_start_col) + "10"
-ws.add_chart(chart, chart_cell)
+# --- Chart 2: Feature Importance (Horizontal Bar Chart) ---
+chart2 = BarChart()
+chart2.type = "bar"  # Horizontal Bars to avoid label overlap
+chart2.title = "Top 10 Feature Importance"
+chart2.y_axis.title = 'Importance'
+chart2.x_axis.title = 'Feature'
+chart2.height = 15
+chart2.width = 25
+
+# Define Data and Category references for Feature Importance
+categories2 = Reference(ws, min_col=start_col, min_row=10, max_row=10+len(feat_imp_df)-1)
+data2 = Reference(ws, min_col=start_col+1, min_row=9, max_col=start_col+1, max_row=10+len(feat_imp_df)-1)
+
+chart2.add_data(data2, titles_from_data=True)
+chart2.set_categories(categories2)
+chart2.dataLabels = DataLabelList()
+chart2.dataLabels.showVal = True
+chart2.dataLabels.showCatName = False
+chart2.dataLabels.showSerName = False
+chart2.dataLabels.position = 'outEnd'
+chart2.varyColors = False  # Single color to ensure Axis Labels appear
+chart2.legend = None       # Remove legend, force labels on axis
+ws.add_chart(chart2, get_cell(start_col + 7, 40)) # PLACEMENT: Row 40 (More space below Chart 1)
+
+# --- Chart 3: Prediction Confidence Histogram (Bar Chart) ---
+chart3 = BarChart()
+chart3.title = "Model Confidence (How sure is it?)"
+chart3.y_axis.title = 'Count of Patients'
+chart3.x_axis.title = 'Confidence %'
+chart3.height = 15
+chart3.width = 25
+
+# Define Data and Category references for Histogram
+categories3 = Reference(ws, min_col=start_col, min_row=24, max_row=24+len(hist_df)-1)
+data3 = Reference(ws, min_col=start_col+1, min_row=23, max_col=start_col+1, max_row=24+len(hist_df)-1)
+
+chart3.add_data(data3, titles_from_data=True)
+chart3.set_categories(categories3)
+chart3.varyColors = False  # Single color for clearer axis
+chart3.legend = None  # No legend needed for single series
+chart3.dataLabels = DataLabelList()
+chart3.dataLabels.showVal = True
+chart3.dataLabels.showCatName = False
+chart3.dataLabels.showSerName = False
+chart3.dataLabels.position = 'outEnd' # Push labels outside bar
+ws.add_chart(chart3, get_cell(start_col + 7, 80))
 
 wb.save(pred_path)
 # Final Summary
